@@ -1,23 +1,31 @@
+#
+# @file  cloud-fues.py
+#
+# @brief Main entrypoint into the cloud-fuse software.
+#
+
 from __future__ import print_function, absolute_import, division
 
 import logging
-
-from errno import ENOENT
-from stat import S_IFDIR, S_IFREG
-from sys import argv, exit
-from time import time
 import math
 import sqlite3
 import os
-from sqlalchemy import Column, String, Integer, ForeignKey, create_engine
 
-from sqlalchemy.orm import relationship, backref, sessionmaker
+from errno      import ENOENT
+from stat       import S_IFDIR, S_IFREG
+from sys        import argv, exit
+from time       import time
+
+from sqlalchemy                 import Column, String, Integer, ForeignKey, create_engine
+from sqlalchemy.orm             import relationship, backref, sessionmaker
 from sqlalchemy.ext.declarative import declarative_base
 
 from fuse import FUSE, FuseOSError, Operations, LoggingMixIn, fuse_get_context
 
+# Base from sqlalchemy orm so that we can derive classes from it.
 Base = declarative_base()
 
+# Holds information about specific files. Soon to be replaced with a more inode-like system.
 class File(Base):
     __tablename__ = 'files'
     id            = Column(Integer, primary_key=True)
@@ -26,8 +34,12 @@ class File(Base):
     permissions   = Column(Integer)
     size          = Column(Integer)
 
+# Main class passed to fuse - this is where we define the functions that are called by fuse.
 class Context(LoggingMixIn, Operations):
 
+    # Remove the first character ('/') from path.
+    #
+    # @FIXME: Should check that the first character is actually / so that if it is called twice on the same string it does not take two characters off the front.
     def preparePath(self, path):
         return path[1:]
 
