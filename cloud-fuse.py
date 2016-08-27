@@ -26,72 +26,6 @@ class File(Base):
     permissions   = Column(Integer)
     size          = Column(Integer)
 
-#    def __init__(self, name, permissions, size, folder=None):
-#        self.name = name
-#        self.permissions = permissions
-#        self.size = size
-#        self.folder = folder
-
-#        self.save()
-
-#    def save(self):
-#        dbHandle=Database()
-
-        #dbHandle.safeWriteOperation("INSERT INTO files (name, folder, permissions, size) VALUES (?, ?, ?, ?)", [self.name, self.folder, self.permissions, self.size]);
-
-#    @staticmethod
-#    def list():
-#        dbHandle=Database()
-#
-#        c = dbHandle.conn.cursor()
-#
-#        fileList = []
-#
-#        for row in c.execute("SELECT name, permissions, size, folder FROM files"):
-#            tmpFile = File(row[0], row[1], row[2], row[3])
-#            print("listing file with name %s", row[0], tmpFile.name)
-#            fileList += [tmpFile]
-#
-#        dbHandle.conn.commit()
-#
-#        return fileList
-
-
-class Singleton(object):
-
-    _instances = {}
-
-    def __new__(cls, *args, **kwargs):
-        if cls not in cls._instances:
-            cls._instances[cls] = object.__new__(cls, *args, **kwargs)
-
-        return cls._instances[cls]
-
-class Database(Singleton):
-    conn = ""
-
-    def __init__(self):
-        if False == os.path.isdir('./example.db'):
-            self.conn = sqlite3.connect('example.db')
-            self.setupDatabase()
-        else:
-            self.conn = sqlite3.connect('example.db')
-
-    def safeWriteOperation(self, sql, parameters=[]):
-        c = self.conn.cursor()
-
-        try:
-            c.execute(sql, parameters)
-        except:
-            print("There was an error running the database query")
-
-        self.conn.commit()
-
-    def setupDatabase(self):
-        self.safeWriteOperation("CREATE TABLE files  (id INTEGER PRIMARY KEY AUTOINCREMENT, name text, permissions int, size int, folder int)")
-        self.safeWriteOperation("CREATE TABLE folder (id INTEGER PRIMARY KEY AUTOINCREMENT, name text, permissions int, size int, folder int)")
-        self.safeWriteOperation("CREATE TABLE blocks (id INTEGER PRIMARY KEY AUTOINCREMENT, cloudName text, offset int, file int, size int)")
-
 class Context(LoggingMixIn, Operations):
 
     def preparePath(self, path):
@@ -132,12 +66,6 @@ class Context(LoggingMixIn, Operations):
 
     def getFile(self, path):
         return s.query(File).order_by(File.id).filter(File.path == self.preparePath(path)).one()
-
-    def listKnownFiles(self):
-        with open('listing.txt') as f:
-            content = f.readlines()
-
-        return content
 
     def removexattr(self, att1, att2):
         return 0
@@ -195,22 +123,9 @@ class Context(LoggingMixIn, Operations):
         raise RuntimeError('unexpected path: %r' % path)
 
     def readdir(self, path, fh):
-#        realFileList = []
-#
-#        for fileObject in File.list():
-#            print("reading file with name:", fileObject.name)
-#            realFileList.append(fileObject.name)
-#
-        print("realFileList:", self.listOfFileNames())
-
         return ['.', '..'] + self.listOfFileNames()
 
     def mkdir(self, path, mode):
-        #conn = sqlite3.connect('example.db')
-        #c = conn.cursor()
-        #c.execute('INSERT INTO file (name) VALUES (?)', path[0])
-        #conn.commit()
-        #c.close()
         print("do nothing")
 
     def create(self, path, mode):
@@ -243,12 +158,5 @@ if __name__ == '__main__':
     session = sessionmaker()
     session.configure(bind=engine)
     Base.metadata.create_all(engine)
-
-    john = File(name='john')
-    s = session()
-    s.add(john)
-    s.commit()
-    it = s.query(File).filter(File.name == 'john').one()
-    print("File Name: ", it.name)
 
     fuse = FUSE(Context(), argv[1], ro=False, foreground=True, nothreads=True)
