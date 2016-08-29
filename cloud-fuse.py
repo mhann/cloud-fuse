@@ -73,6 +73,11 @@ class Context(LoggingMixIn, Operations):
 
         return totalSize
 
+    def stringToChunks(self, string, chunkSize):
+        while seq:
+            yield seq[:chunkSize]
+            seq = seq[chunkSize:]
+
     def addFile(self, path):
         newFile = File(path=path, name=path, permissions=777, size=0)
         session.add(newFile)
@@ -163,7 +168,7 @@ class Context(LoggingMixIn, Operations):
 
             print("Would return: {}".format(blockContentsFromOffset))
 
-            return blockContentsFromOffset
+            yield blockContentsFromOffset
 
     def readdir(self, path, fh):
         return ['.', '..'] + self.listOfFileNames()
@@ -177,6 +182,12 @@ class Context(LoggingMixIn, Operations):
 
         if not self.fileExists(path):
             self.addFile(path[1:])
+
+            blockPath = self.getBlockRoot(path)
+
+            if not os.path.exists(blockPath):
+                os.makedirs(blockPath)
+
             return self.getFile(path[1:]).id
 
         return os.EEXIST
@@ -189,9 +200,6 @@ class Context(LoggingMixIn, Operations):
 
         blockPath = self.getBlockRoot(path)
 
-        if not os.path.exists(blockPath):
-            os.makedirs(blockPath)
-
         blockSize = 512
         firstBlock = int(math.ceil(offset/512))
         firstBlockOffset = int(offset%512)
@@ -199,15 +207,19 @@ class Context(LoggingMixIn, Operations):
         if offset == 0:
             firstBlock = 1
 
-        print("Writing data {} of size {} to block {} at offset {}".format(data, len(data), firstBlock, firstBlockOffset))
+        currentBlock = firstBlock
 
-        f = os.open(blockPath+str(firstBlock), os.O_CREAT | os.O_WRONLY)
+        for dataBlock in self.stringToChunks(data, blockSize):
 
-        with os.fdopen(f, 'w') as file_obj:
-            file_obj.seek(firstBlockOffset)
-            file_obj.write(data)
+            print("Writing data {} of size {} to block {} at offset {}".format(dataBlock, len(dataBlock), currentBlock, firstBlockOffset))
 
-        return len(data)
+            f = os.open(blockPath+str(firstBlock), os.O_CREAT | os.O_WRONLY)
+
+            with os.fdopen(f, 'w') as file_obj:
+                file_obj.seek(firstBlockOffset)
+                file_obj.write(dataBlock)
+
+                return len(data)
 
 if __name__ == '__main__':
     if len(argv) != 2:
