@@ -10,6 +10,7 @@ import logging
 import math
 import sqlite3
 import os
+import md5
 
 from errno      import ENOENT
 from stat       import S_IFDIR, S_IFREG
@@ -51,6 +52,18 @@ class Context(LoggingMixIn, Operations):
 
         return knownFiles
 
+    def getBlockRoot(self, path):
+        md5Instance = md5.new()
+        md5Instance.update(path)
+
+        return 'data/files/{}/blocks/'.format(md5Instance.hexdigest())
+
+    def listBlocks(self, path):
+        blockRoot = self.getBlockRoot(path)
+
+        blocks = os.listdir(blockRoot)
+        return len(blocks)
+
     def addFile(self, path):
         newFile = File(path=path, name=path, permissions=777, size=0)
         session.add(newFile)
@@ -86,7 +99,7 @@ class Context(LoggingMixIn, Operations):
         uid, gid, pid = fuse_get_context()
 
         if self.preparePath(path) in self.listOfFileNames():
-            attr = dict(st_mode=(S_IFDIR | 0o755), st_nlink=2)
+            attr = dict(st_mode=(S_IFREG | 0o755), st_nlink=2)
         elif path == '/':
             attr = dict(st_mode=(S_IFDIR | 0o755), st_nlink=2)
         else:
@@ -95,11 +108,28 @@ class Context(LoggingMixIn, Operations):
         attr['st_ctime'] = attr['st_mtime'] = time()
         return attr
 
+    def truncate(self, path, length, fh=None):
+        blockPath = self.getBlockRoot(path)
+
+        print("Deleting all files in: {}".format(blockPath))
+
+        for f in os.listdir(blockPath):
+            os.remove(blockPath+f)
+
     def read(self, path, size, offset, fh):
+
+        if not self.preparePath(path) in self.listOfFileNames():
+            raise RuntimeError('unexpected path: %r' % path)
 
         offsetFromFirstBlock=offset%512
         firstBlock=int(math.ceil(offset/512))
         numberOfBlocks=int(math.ceil((offsetFromFirstBlock+size)/512))
+
+        if numberOfBlocks > self.listBlocks(path) :
+            numberOfBlocks = self.listBlocks(path)
+
+        if offset == 0:
+            firstBlock = 1
 
         for i in range(firstBlock, firstBlock+numberOfBlocks):
             if(i == firstBlock):
@@ -114,17 +144,17 @@ class Context(LoggingMixIn, Operations):
 
             print("Would read {} bytes from block #{} at offset {}".format(bytesToRead, i, offsetForBlock))
 
-        uid, gid, pid = fuse_get_context()
-        encoded = lambda x: ('%s\n' % x).encode('utf-8')
+            blockPath = self.getBlockRoot(path)
 
-        if path == path:
-            return encoded(uid)
-        elif path == '/gid':
-            return encoded(gid)
-        elif path == '/pid':
-            return encoded(pid)
+            print("Reading {} bytes from {} at offset {}".format(bytesToRead, self.getBlockRoot(path)+str(i), offsetForBlock))
 
-        raise RuntimeError('unexpected path: %r' % path)
+            f = open(self.getBlockRoot(path)+str(i), 'r')
+            f.seek(offsetForBlock)
+            blockContentsFromOffset = f.read(bytesToRead)
+
+            print("Would return: {}".format(blockContentsFromOffset))
+
+            return blockContentsFromOffset
 
     def readdir(self, path, fh):
         return ['.', '..'] + self.listOfFileNames()
@@ -143,18 +173,32 @@ class Context(LoggingMixIn, Operations):
         return os.EEXIST
 
     def open(self, path, flags):
-        print("open called with flags: {}".format(flags))
-        print("CREATE FLAG: {}".format(os.O_CREAT))
+        # NOT a real fd - but will do for simple testing
         return self.getFile(path).id
 
     def write(self, path, data, offset, fh):
 
-        blockPath = 'data/files/{}/blocks/'.format(md5.new().update(path).hexdigest())
+        blockPath = self.getBlockRoot(path)
 
         if not os.path.exists(blockPath):
-            os.mkdirs(blockPath)
+            os.makedirs(blockPath)
 
-        return 1
+        blockSize = 512
+        firstBlock = int(math.ceil(offset/512))
+        firstBlockOffset = int(offset%512)
+
+        if offset == 0:
+            firstBlock = 1
+
+        print("Writing data {} of size {} to block {} at offset {}".format(data, len(data), firstBlock, firstBlockOffset))
+
+        f = os.open(blockPath+str(firstBlock), os.O_CREAT | os.O_WRONLY)
+
+        with os.fdopen(f, 'w') as file_obj:
+            file_obj.seek(firstBlockOffset)
+            file_obj.write(data)
+
+        return len(data)
 
 if __name__ == '__main__':
     if len(argv) != 2:
