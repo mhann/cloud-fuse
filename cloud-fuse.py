@@ -74,9 +74,9 @@ class Context(LoggingMixIn, Operations):
         return totalSize
 
     def stringToChunks(self, string, chunkSize):
-        while seq:
-            yield seq[:chunkSize]
-            seq = seq[chunkSize:]
+        while string:
+            yield string[:chunkSize]
+            string = string[chunkSize:]
 
     def addFile(self, path):
         newFile = File(path=path, name=path, permissions=777, size=0)
@@ -142,8 +142,12 @@ class Context(LoggingMixIn, Operations):
         if numberOfBlocks > self.listBlocks(path) :
             numberOfBlocks = self.listBlocks(path)
 
+        print("Number of blocks: {}".format(numberOfBlocks))
+
         if offset == 0:
             firstBlock = 1
+
+        fileContent = ""
 
         for i in range(firstBlock, firstBlock+numberOfBlocks):
             if(i == firstBlock):
@@ -168,7 +172,9 @@ class Context(LoggingMixIn, Operations):
 
             print("Would return: {}".format(blockContentsFromOffset))
 
-            yield blockContentsFromOffset
+            fileContent += blockContentsFromOffset
+
+        return fileContent
 
     def readdir(self, path, fh):
         return ['.', '..'] + self.listOfFileNames()
@@ -201,25 +207,43 @@ class Context(LoggingMixIn, Operations):
         blockPath = self.getBlockRoot(path)
 
         blockSize = 512
-        firstBlock = int(math.ceil(offset/512))
-        firstBlockOffset = int(offset%512)
+        firstBlock = int(math.ceil(offset/blockSize))
+        firstBlockOffset = int(offset%blockSize)
+        numberOfBlocks=int(math.ceil((firstBlockOffset+blockSize)/blockSize))
 
         if offset == 0:
             firstBlock = 1
 
         currentBlock = firstBlock
 
-        for dataBlock in self.stringToChunks(data, blockSize):
+        test = self.stringToChunks(data, blockSize)
 
-            print("Writing data {} of size {} to block {} at offset {}".format(dataBlock, len(dataBlock), currentBlock, firstBlockOffset))
+        print(list(test))
 
-            f = os.open(blockPath+str(firstBlock), os.O_CREAT | os.O_WRONLY)
+        for i, dataBlock in enumerate(self.stringToChunks(data, blockSize)):
+            if(i == 0):
+                # This is the first block that we are writing to
+                bytesToRead=blockSize-firstBlockOffset
+                offsetForBlock=firstBlockOffset
+            elif(i == numberOfBlocks):
+                # This is the last block that we are writing to
+                bytesToRead=blockSize-(blockSize-firstBlockOffset)
+                offsetForBlock=0
+            else:
+                bytesToRead=blockSize
+                offsetForBlock=0
+
+            currentBlock = firstBlock+i
+
+            print("Writing data {} of size {} to block {} at offset {}".format(dataBlock, len(dataBlock), currentBlock, offsetForBlock))
+
+            f = os.open(blockPath+str(currentBlock), os.O_CREAT | os.O_WRONLY)
 
             with os.fdopen(f, 'w') as file_obj:
                 file_obj.seek(firstBlockOffset)
                 file_obj.write(dataBlock)
 
-                return len(data)
+        return len(data)
 
 if __name__ == '__main__':
     if len(argv) != 2:
