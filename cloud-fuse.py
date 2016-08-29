@@ -46,20 +46,20 @@ class Context(LoggingMixIn, Operations):
     def listOfFileNames(self):
         knownFiles = []
 
-        for file in s.query(File).order_by(File.id):
+        for file in session.query(File).order_by(File.id):
             knownFiles.append(file.name)
 
         return knownFiles
 
     def addFile(self, path):
         newFile = File(path=path, name=path, permissions=777, size=0)
-        s.add(newFile)
-        s.commit()
+        session.add(newFile)
+        session.commit()
         return newFile.id
 
     def fileExists(self, path):
         print("Checking if {} exists".format(self.preparePath(path)))
-        fileCountQuery = s.query(File).filter_by(path=self.preparePath(path))
+        fileCountQuery = session.query(File).filter_by(path=self.preparePath(path))
         fileCount = fileCountQuery.count()
 
         print("Database query returned {}".format(fileCount))
@@ -77,7 +77,7 @@ class Context(LoggingMixIn, Operations):
             return True
 
     def getFile(self, path):
-        return s.query(File).order_by(File.id).filter(File.path == self.preparePath(path)).one()
+        return session.query(File).order_by(File.id).filter(File.path == self.preparePath(path)).one()
 
     def removexattr(self, att1, att2):
         return 0
@@ -85,20 +85,12 @@ class Context(LoggingMixIn, Operations):
     def getattr(self, path, fh=None):
         uid, gid, pid = fuse_get_context()
 
-        if path == '/':
+        if self.preparePath(path) in self.listOfFileNames():
             attr = dict(st_mode=(S_IFDIR | 0o755), st_nlink=2)
-        elif path in self.listOfFileNames():
-            size = len('%s\n' % uid)
-            attr = dict(st_mode=(S_IFREG | 0o444), st_size=size)
-        elif path == '/gid':
-            size = len('%s\n' % gid)
-            attr = dict(st_mode=(S_IFREG | 0o444), st_size=size)
-        elif path == '/pid':
-            size = len('%s\n' % pid)
-            attr = dict(st_mode=(S_IFREG | 0o444), st_size=size)
+        elif path == '/':
+            attr = dict(st_mode=(S_IFDIR | 0o755), st_nlink=2)
         else:
-            size = len('%s\n' % pid)
-            attr = dict(st_mode=(S_IFREG | 0o755), st_size=size)
+            raise FuseOSError(ENOENT)
 
         attr['st_ctime'] = attr['st_mtime'] = time()
         return attr
@@ -141,6 +133,9 @@ class Context(LoggingMixIn, Operations):
         print("do nothing")
 
     def create(self, path, mode):
+
+        print("Create called")
+
         if not self.fileExists(path):
             self.addFile(path[1:])
             return self.getFile(path[1:]).id
@@ -148,6 +143,8 @@ class Context(LoggingMixIn, Operations):
         return os.EEXIST
 
     def open(self, path, flags):
+        print("open called with flags: {}".format(flags))
+        print("CREATE FLAG: {}".format(os.O_CREAT))
         return self.getFile(path).id
 
     def write(self, path, data, offset, fh):
@@ -167,8 +164,9 @@ if __name__ == '__main__':
     logging.basicConfig(level=logging.DEBUG)
 
     engine = create_engine('sqlite:///', echo=True)
-    session = sessionmaker()
-    session.configure(bind=engine)
+    sessionMaker = sessionmaker()
+    sessionMaker.configure(bind=engine)
     Base.metadata.create_all(engine)
+    session = sessionMaker()
 
     fuse = FUSE(Context(), argv[1], ro=False, foreground=True, nothreads=True)
