@@ -64,6 +64,15 @@ class Context(LoggingMixIn, Operations):
         blocks = os.listdir(blockRoot)
         return len(blocks)
 
+    def getSizeOfFile(self, path):
+        totalSize = 0
+        blockRoot = self.getBlockRoot(path)
+
+        for block in os.listdir(blockRoot):
+            totalSize += os.path.getsize(blockRoot+block)
+
+        return totalSize
+
     def addFile(self, path):
         newFile = File(path=path, name=path, permissions=777, size=0)
         session.add(newFile)
@@ -99,7 +108,7 @@ class Context(LoggingMixIn, Operations):
         uid, gid, pid = fuse_get_context()
 
         if self.preparePath(path) in self.listOfFileNames():
-            attr = dict(st_mode=(S_IFREG | 0o755), st_nlink=2)
+            attr = dict(st_mode=(S_IFREG | 0o755), st_nlink=2, st_size=self.getSizeOfFile(path))
         elif path == '/':
             attr = dict(st_mode=(S_IFDIR | 0o755), st_nlink=2)
         else:
