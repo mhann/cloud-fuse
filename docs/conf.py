@@ -263,7 +263,7 @@ latex_elements = {
 #  author, documentclass [howto, manual, or own class]).
 latex_documents = [
     (master_doc, 'cloud-fuse.tex', u'cloud-fuse Documentation',
-     u'Marcus Hann', 'manual'),
+     u'Marcus Hann', 'manual', True),
 ]
 
 # The name of an image file (relative to this directory) to place at the top of
