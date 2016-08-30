@@ -12,6 +12,7 @@ import sqlite3
 import os
 import md5
 
+import helpers.blocks
 from errno      import ENOENT
 from stat       import S_IFDIR, S_IFREG
 from sys        import argv, exit
@@ -72,11 +73,6 @@ class Context(LoggingMixIn, Operations):
             totalSize += os.path.getsize(blockRoot+block)
 
         return totalSize
-
-    def stringToChunks(self, string, chunkSize):
-        while string:
-            yield string[:chunkSize]
-            string = string[chunkSize:]
 
     def addFile(self, path):
         newFile = File(path=path, name=path, permissions=777, size=0)
@@ -216,11 +212,11 @@ class Context(LoggingMixIn, Operations):
 
         currentBlock = firstBlock
 
-        test = self.stringToChunks(data, blockSize)
+        test = helpers.blocks.stringToChunks(data, blockSize)
 
         print(list(test))
 
-        for i, dataBlock in enumerate(self.stringToChunks(data, blockSize)):
+        for i, dataBlock in enumerate(helpers.blocks.stringToChunks(data, blockSize)):
             if(i == 0):
                 # This is the first block that we are writing to
                 bytesToRead=blockSize-firstBlockOffset
@@ -258,4 +254,6 @@ if __name__ == '__main__':
     Base.metadata.create_all(engine)
     session = sessionMaker()
 
-    fuse = FUSE(Context(), argv[1], ro=False, foreground=True, nothreads=True)
+    block = helpers.blocks.Blocks()
+
+    #fuse = FUSE(Context(), argv[1], ro=False, foreground=True, nothreads=True)
