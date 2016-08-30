@@ -9,7 +9,7 @@ The plugins will only need to implement a few basic functions:
 * list files
 * upload file
 * download file
- delete file
+* delete file
 
 If possible, they should also implement:
 
