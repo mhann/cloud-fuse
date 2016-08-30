@@ -11,6 +11,9 @@ Contents:
 .. toctree::
    :maxdepth: 2
 
+   intro
+   for-developers
+   for-users
 
 
 Indices and tables
