@@ -12,8 +12,8 @@ Contents:
    :maxdepth: 2
 
    intro
-   for-developers
-   for-users
+   for-developers/*
+   for-users/*
 
 
 Indices and tables
