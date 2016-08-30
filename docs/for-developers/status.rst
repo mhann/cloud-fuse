@@ -21,7 +21,7 @@ Misc
 ctime/mtime update       ❌
 Custom permissions       ❌
 Hard links               ❌
-Symbolic links           ❌ [#]_
+Symbolic links           ❌ 
 =====================  ===========
 
 .. [#] partial writes are supported (from random offsets)
