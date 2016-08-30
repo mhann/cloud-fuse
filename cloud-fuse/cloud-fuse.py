@@ -13,6 +13,9 @@ import os
 import md5
 
 import helpers.blocks
+import helpers.filesystem
+import helpers.database
+
 from errno      import ENOENT
 from stat       import S_IFDIR, S_IFREG
 from sys        import argv, exit
@@ -36,16 +39,12 @@ class File(Base):
     permissions   = Column(Integer)
     size          = Column(Integer)
 
-# Main class passed to fuse - this is where we define the functions that are called by fuse.
-class Context(LoggingMixIn, Operations):
+    @staticmethod
+    def get(path):
+        return session.query(File).order_by(File.id).filter(File.path == helpers.filesystem.preparePath(path)).one()
 
-    # Remove the first character ('/') from path.
-    #
-    # @FIXME: Should check that the first character is actually / so that if it is called twice on the same string it does not take two characters off the front.
-    def preparePath(self, path):
-        return path[1:]
-
-    def listOfFileNames(self):
+    @staticmethod
+    def listOfFileNames():
         knownFiles = []
 
         for file in session.query(File).order_by(File.id):
@@ -53,36 +52,10 @@ class Context(LoggingMixIn, Operations):
 
         return knownFiles
 
-    def getBlockRoot(self, path):
-        md5Instance = md5.new()
-        md5Instance.update(path)
-
-        return 'data/files/{}/blocks/'.format(md5Instance.hexdigest())
-
-    def listBlocks(self, path):
-        blockRoot = self.getBlockRoot(path)
-
-        blocks = os.listdir(blockRoot)
-        return len(blocks)
-
-    def getSizeOfFile(self, path):
-        totalSize = 0
-        blockRoot = self.getBlockRoot(path)
-
-        for block in os.listdir(blockRoot):
-            totalSize += os.path.getsize(blockRoot+block)
-
-        return totalSize
-
-    def addFile(self, path):
-        newFile = File(path=path, name=path, permissions=777, size=0)
-        session.add(newFile)
-        session.commit()
-        return newFile.id
-
-    def fileExists(self, path):
-        print("Checking if {} exists".format(self.preparePath(path)))
-        fileCountQuery = session.query(File).filter_by(path=self.preparePath(path))
+    @staticmethod
+    def exists(path):
+        print("Checking if {} exists".format(helpers.filesystem.preparePath(path)))
+        fileCountQuery = session.query(File).filter_by(path=helpers.filesystem.preparePath(path))
         fileCount = fileCountQuery.count()
 
         print("Database query returned {}".format(fileCount))
@@ -99,17 +72,16 @@ class Context(LoggingMixIn, Operations):
             # Return true to stop another duplicate file being added
             return True
 
-    def getFile(self, path):
-        return session.query(File).order_by(File.id).filter(File.path == self.preparePath(path)).one()
-
+# Main class passed to fuse - this is where we define the functions that are called by fuse.
+class Context(LoggingMixIn, Operations):
     def removexattr(self, att1, att2):
         return 0
 
     def getattr(self, path, fh=None):
         uid, gid, pid = fuse_get_context()
 
-        if self.preparePath(path) in self.listOfFileNames():
-            attr = dict(st_mode=(S_IFREG | 0o755), st_nlink=2, st_size=self.getSizeOfFile(path))
+        if helpers.filesystem.preparePath(path) in File.listOfFileNames():
+            attr = dict(st_mode=(S_IFREG | 0o755), st_nlink=2, st_size=helpers.blocks.getSizeOfFile(path))
         elif path == '/':
             attr = dict(st_mode=(S_IFDIR | 0o755), st_nlink=2)
         else:
@@ -119,7 +91,7 @@ class Context(LoggingMixIn, Operations):
         return attr
 
     def truncate(self, path, length, fh=None):
-        blockPath = self.getBlockRoot(path)
+        blockPath = helpers.blocks.getBlockRoot(path)
 
         print("Deleting all files in: {}".format(blockPath))
 
@@ -128,15 +100,15 @@ class Context(LoggingMixIn, Operations):
 
     def read(self, path, size, offset, fh):
 
-        if not self.preparePath(path) in self.listOfFileNames():
+        if not helpers.filesystem.preparePath(path) in File.listOfFileNames():
             raise RuntimeError('unexpected path: %r' % path)
 
         offsetFromFirstBlock=offset%512
         firstBlock=int(math.ceil(offset/512))
         numberOfBlocks=int(math.ceil((offsetFromFirstBlock+size)/512))
 
-        if numberOfBlocks > self.listBlocks(path) :
-            numberOfBlocks = self.listBlocks(path)
+        if numberOfBlocks > helpers.blocks.listBlocks(path) :
+            numberOfBlocks = helpers.blocks.listBlocks(path)
 
         print("Number of blocks: {}".format(numberOfBlocks))
 
@@ -158,11 +130,11 @@ class Context(LoggingMixIn, Operations):
 
             print("Would read {} bytes from block #{} at offset {}".format(bytesToRead, i, offsetForBlock))
 
-            blockPath = self.getBlockRoot(path)
+            blockPath = helpers.blocks.getBlockRoot(path)
 
-            print("Reading {} bytes from {} at offset {}".format(bytesToRead, self.getBlockRoot(path)+str(i), offsetForBlock))
+            print("Reading {} bytes from {} at offset {}".format(bytesToRead, helpers.blocks.getBlockRoot(path)+str(i), offsetForBlock))
 
-            f = open(self.getBlockRoot(path)+str(i), 'r')
+            f = open(helpers.blocks.getBlockRoot(path)+str(i), 'r')
             f.seek(offsetForBlock)
             blockContentsFromOffset = f.read(bytesToRead)
 
@@ -173,7 +145,7 @@ class Context(LoggingMixIn, Operations):
         return fileContent
 
     def readdir(self, path, fh):
-        return ['.', '..'] + self.listOfFileNames()
+        return ['.', '..'] + File.listOfFileNames()
 
     def mkdir(self, path, mode):
         print("do nothing")
@@ -182,25 +154,27 @@ class Context(LoggingMixIn, Operations):
 
         print("Create called")
 
-        if not self.fileExists(path):
-            self.addFile(path[1:])
+        if not File.exists(path):
+            newFile = File(path=path[1:], name=path[1:], permissions=777, size=0)
+            session.add(newFile)
+            session.commit()
 
-            blockPath = self.getBlockRoot(path)
+            blockPath = helpers.blocks.getBlockRoot(path)
 
             if not os.path.exists(blockPath):
                 os.makedirs(blockPath)
 
-            return self.getFile(path[1:]).id
+            return newFile.id
 
         return os.EEXIST
 
     def open(self, path, flags):
         # NOT a real fd - but will do for simple testing
-        return self.getFile(path).id
+        return File.get(path).id
 
     def write(self, path, data, offset, fh):
 
-        blockPath = self.getBlockRoot(path)
+        blockPath = helpers.blocks.getBlockRoot(path)
 
         blockSize = 512
         firstBlock = int(math.ceil(offset/blockSize))
@@ -254,6 +228,4 @@ if __name__ == '__main__':
     Base.metadata.create_all(engine)
     session = sessionMaker()
 
-    block = helpers.blocks.Blocks()
-
-    #fuse = FUSE(Context(), argv[1], ro=False, foreground=True, nothreads=True)
+    fuse = FUSE(Context(), argv[1], ro=False, foreground=True, nothreads=True)
