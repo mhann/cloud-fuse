@@ -1,5 +1,5 @@
 #
-# @file  cloud-fues.py
+# @file  cloud-fuse.py
 #
 # @brief Main entrypoint into the cloud-fuse software.
 #
@@ -21,7 +21,7 @@ from stat       import S_IFDIR, S_IFREG
 from sys        import argv, exit
 from time       import time
 
-from sqlalchemy                 import Column, String, Integer, ForeignKey, create_engine
+from sqlalchemy                 import Column, String, Integer, ForeignKey, create_engine, Boolean, Date
 from sqlalchemy.orm             import relationship, backref, sessionmaker
 from sqlalchemy.ext.declarative import declarative_base
 
@@ -30,9 +30,53 @@ from fuse import FUSE, FuseOSError, Operations, LoggingMixIn, fuse_get_context
 # Base from sqlalchemy orm so that we can derive classes from it.
 Base = declarative_base()
 
+class Node(Base):
+    __tablename__ = 'node'
+    id            = Column(Integer, primary_key=True)
+    parent_id     = Column(Integer, ForeignKey('node.id'))
+    children      = relationship("Node")
+    name          = Column(String)
+    size          = Column(Integer)
+    permissions   = Column(Integer)
+    directory     = Column(Boolean)
+    create_time   = Column(Date)
+    update_time   = Column(Date)
+    read_time     = Column(Date)
+    parent        = relationship("Node", remote_side=[id])
+
+    @staticmethod
+    def getTopLevelNodes():
+        return session.query(Node).order_by(Node.id).filter(Node.parent == None)
+
+    @staticmethod
+    def getChildrenOfNode(parent):
+        return session.query(Node).order_by(Node.id).filter(Node.parent == parent)
+
+    @staticmethod
+    def getNodeFromAbsPath(path):
+        splitPath = path.split("/")
+
+        lastParentNode = None
+
+        for pathSection in splitPath:
+            print("Working on path segment: {}".format(pathSection))
+            if pathSection == "":
+                continue
+
+            try:
+                print("Looking for node with parentid {} and name {}".format(lastParentNode, pathSection))
+                lastParentNode = session.query(Node).order_by(Node.id).filter(Node.parent == lastParentNode, Node.name == pathSection).one()
+                print("Found match for: {}, which was: {}".format(pathSection, Node.id))
+            except:
+                # No file existed in this path
+                return False
+
+        return lastParentNode
+
+
 # Holds information about specific files. Soon to be replaced with a more inode-like system.
 class File(Base):
-    __tablename__ = 'files'
+    __tablename__ = 'file'
     id            = Column(Integer, primary_key=True)
     path          = Column(String)
     name          = Column(String)
@@ -154,9 +198,17 @@ class Context(LoggingMixIn, Operations):
 
         print("Create called")
 
-        if not File.exists(path):
-            newFile = File(path=path[1:], name=path[1:], permissions=777, size=0)
-            session.add(newFile)
+        if not Node.getNodeFromAbsPath(path):
+            pathRoot = path.split('/')[:-1]
+            pathRoot = str.join(pathRoot)
+
+            parentNode = Node.getNodeFromAbsPath(pathRoot)
+
+            if not parentNode.directory:
+                print("Trying to add node to non-directory node!")
+                return -1
+
+            parentNode.children.append(Node(name=path.split('/')[1], directory=False))
             session.commit()
 
             blockPath = helpers.blocks.getBlockRoot(path)
@@ -227,5 +279,21 @@ if __name__ == '__main__':
     sessionMaker.configure(bind=engine)
     Base.metadata.create_all(engine)
     session = sessionMaker()
+
+    parent1=Node(name='test')
+    parent1.children.append(Node(name='test2'))
+
+    session.add(parent1)
+    session.commit()
+
+    print("Listing all nodes")
+    for node in session.query(Node):
+        print("Node: {}".format(node.name))
+
+    Node.getNodeFromAbsPath('/test/test2').children.append(Node(name='test21'))
+
+    session.commit()
+
+    print(Node.getNodeFromAbsPath('/test/test2/test21').name)
 
     fuse = FUSE(Context(), argv[1], ro=False, foreground=True, nothreads=True)
