@@ -130,8 +130,12 @@ class Context(LoggingMixIn, Operations):
     def getattr(self, path, fh=None):
         uid, gid, pid = fuse_get_context()
 
-        if helpers.filesystem.preparePath(path) in File.listOfFileNames():
-            attr = dict(st_mode=(S_IFREG | 0o755), st_nlink=2, st_size=helpers.blocks.getSizeOfFile(path))
+        node = Node.getNodeFromAbsPath(path)
+        if node:
+            if(node.directory):
+                attr = dict(st_mode=(S_IFDIR | 0o755), st_nlink=2, st_size=5)
+            else:
+                attr = dict(st_mode=(S_IFREG | 0o755), st_nlink=2, st_size=5)
         elif path == '/':
             attr = dict(st_mode=(S_IFDIR | 0o755), st_nlink=2)
         else:
@@ -195,7 +199,7 @@ class Context(LoggingMixIn, Operations):
         return fileContent
 
     def readdir(self, path, fh):
-        return ['.', '..'] + [node.name for node in Node.getChildrenOfNode(Node.getNodeFromAbsPath("/test/test2"))]
+        return ['.', '..'] + [node.name for node in Node.getChildrenOfNode(Node.getNodeFromAbsPath(path))]
 
     def mkdir(self, path, mode):
         print("do nothing")
@@ -292,8 +296,8 @@ if __name__ == '__main__':
     Base.metadata.create_all(engine)
     session = sessionMaker()
 
-    parent1=Node(name='test')
-    parent1.children.append(Node(name='test2'))
+    parent1=Node(name='test', directory=True)
+    parent1.children.append(Node(name='test2', directory=True))
 
     session.add(parent1)
     session.commit()
