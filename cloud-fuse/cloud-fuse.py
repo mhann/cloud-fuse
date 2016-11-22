@@ -50,7 +50,13 @@ class Node(Base):
 
     @staticmethod
     def getChildrenOfNode(parent):
-        return session.query(Node).order_by(Node.id).filter(Node.parent == parent)
+        childNodes = []
+
+        for row in session.query(Node).order_by(Node.id).filter(Node.parent == parent).all():
+            print(row.name);
+            childNodes.append(row)
+
+        return childNodes
 
     @staticmethod
     def getNodeFromAbsPath(path):
@@ -189,16 +195,21 @@ class Context(LoggingMixIn, Operations):
         return fileContent
 
     def readdir(self, path, fh):
-        return ['.', '..'] + File.listOfFileNames()
+        return ['.', '..'] + [node.name for node in Node.getChildrenOfNode(Node.getNodeFromAbsPath("/test/test2"))]
 
     def mkdir(self, path, mode):
         print("do nothing")
 
     def create(self, path, mode):
-
         print("Create called")
 
         if not Node.getNodeFromAbsPath(path):
+            if len(path.split('/')[:-1]) == 1:
+                 parent=Node(name=path.split('/')[1])
+                 session.add(parent)
+                 session.commit()
+                 return parent.id
+
             pathRoot = path.split('/')[:-1]
             pathRoot = str.join(pathRoot)
 
@@ -206,7 +217,8 @@ class Context(LoggingMixIn, Operations):
 
             if not parentNode.directory:
                 print("Trying to add node to non-directory node!")
-                return -1
+                # I doubt EEXIST is the correct thing to be returning here.
+                return os.EEXIST
 
             parentNode.children.append(Node(name=path.split('/')[1], directory=False))
             session.commit()
