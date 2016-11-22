@@ -210,17 +210,6 @@ class Context(LoggingMixIn, Operations):
                 session.commit()
                 return 0
 
-    def create(self, path, mode):
-        print("Create called")
-
-        if not Node.getNodeFromAbsPath(path):
-            if len(path.split('/')[:-1]) == 1:
-                print("Adding to root")
-                parent=Node(name=path.split('/')[1])
-                session.add(parent)
-                session.commit()
-                return parent.id
-
             pathRoot = path.split('/')[:-1]
             pathRoot = str.join(pathRoot)
 
@@ -231,12 +220,50 @@ class Context(LoggingMixIn, Operations):
                 # I doubt EEXIST is the correct thing to be returning here.
                 return os.EEXIST
 
-            parentNode.children.append(Node(name=path.split('/')[1], directory=False))
+            newFile = Node(name=path.split('/')[1], directory=True)
+            parentNode.children.append(newFile)
             session.commit()
 
             blockPath = helpers.blocks.getBlockRoot(path)
 
             if not os.path.exists(blockPath):
+                os.makedirs(blockPath)
+
+            return newFile.id
+
+        return os.EEXIST
+
+    def create(self, path, mode):
+        print("Create called")
+
+        if not Node.getNodeFromAbsPath(path):
+            if len(path.split('/')[:-1]) == 1:
+                print("Adding to root")
+                newFile=Node(name=path.split('/')[1])
+                session.add(newFile)
+                session.commit()
+            else:
+                pathRoot = path.split('/')[:-1]
+                pathRoot = str.join(pathRoot)
+
+                parentNode = Node.getNodeFromAbsPath(pathRoot)
+
+                if not parentNode.directory:
+                    print("Trying to add node to non-directory node!")
+                    # I doubt EEXIST is the correct thing to be returning here.
+                    return os.EEXIST
+
+                newFile = Node(name=path.split('/')[1], directory=False)
+                parentNode.children.append(newFile)
+                session.commit()
+
+
+            blockPath = helpers.blocks.getBlockRoot(path)
+
+            print("Block path is: {}".format(blockPath))
+
+            if not os.path.exists(blockPath):
+                print("Block path does not exist. Creating")
                 os.makedirs(blockPath)
 
             return newFile.id
