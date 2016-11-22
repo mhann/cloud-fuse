@@ -133,9 +133,9 @@ class Context(LoggingMixIn, Operations):
         node = Node.getNodeFromAbsPath(path)
         if node:
             if(node.directory):
-                attr = dict(st_mode=(S_IFDIR | 0o755), st_nlink=2, st_size=5)
+                attr = dict(st_mode=(S_IFDIR | 0o755), st_nlink=2, st_size=0)
             else:
-                attr = dict(st_mode=(S_IFREG | 0o755), st_nlink=2, st_size=5)
+                attr = dict(st_mode=(S_IFREG | 0o755), st_nlink=2, st_size=helpers.blocks.getSizeOfFile(path))
         elif path == '/':
             attr = dict(st_mode=(S_IFDIR | 0o755), st_nlink=2)
         else:
@@ -154,7 +154,7 @@ class Context(LoggingMixIn, Operations):
 
     def read(self, path, size, offset, fh):
 
-        if not helpers.filesystem.preparePath(path) in File.listOfFileNames():
+        if not Node.getNodeFromAbsPath(path):
             raise RuntimeError('unexpected path: %r' % path)
 
         offsetFromFirstBlock=offset%512
@@ -272,7 +272,7 @@ class Context(LoggingMixIn, Operations):
 
     def open(self, path, flags):
         # NOT a real fd - but will do for simple testing
-        return File.get(path).id
+        return Node.getNodeFromAbsPath(path).id
 
     def write(self, path, data, offset, fh):
 
@@ -324,7 +324,7 @@ if __name__ == '__main__':
 
     logging.basicConfig(level=logging.DEBUG)
 
-    engine = create_engine('sqlite:///', echo=True)
+    engine = create_engine('sqlite:///')
     sessionMaker = sessionmaker()
     sessionMaker.configure(bind=engine)
     Base.metadata.create_all(engine)
