@@ -211,7 +211,7 @@ class Context(LoggingMixIn, Operations):
                 return 0
 
             pathRoot = path.split('/')[:-1]
-            pathRoot = str.join(pathRoot)
+            pathRoot = '/'.join(pathRoot)
 
             parentNode = Node.getNodeFromAbsPath(pathRoot)
 
@@ -244,7 +244,7 @@ class Context(LoggingMixIn, Operations):
                 session.commit()
             else:
                 pathRoot = path.split('/')[:-1]
-                pathRoot = str.join(pathRoot)
+                pathRoot = '/'.join(pathRoot)
 
                 parentNode = Node.getNodeFromAbsPath(pathRoot)
 
@@ -253,7 +253,7 @@ class Context(LoggingMixIn, Operations):
                     # I doubt EEXIST is the correct thing to be returning here.
                     return os.EEXIST
 
-                newFile = Node(name=path.split('/')[1], directory=False)
+                newFile = Node(name=path.split('/')[-1], directory=False)
                 parentNode.children.append(newFile)
                 session.commit()
 
