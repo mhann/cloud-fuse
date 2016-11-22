@@ -11,6 +11,7 @@ import math
 import sqlite3
 import os
 import md5
+import importlib
 
 import helpers.blocks
 import helpers.filesystem
@@ -345,5 +346,10 @@ if __name__ == '__main__':
     session.commit()
 
     print(Node.getNodeFromAbsPath('/test/test2/test21').name)
+
+    print("Testing drivers")
+    driverImport = importlib.import_module("drivers.filesystem", __name__)
+
+    filesystem = driverImport.drivers.filesystem.FileSystem()
 
     fuse = FUSE(Context(), argv[1], ro=False, foreground=True, nothreads=True)
