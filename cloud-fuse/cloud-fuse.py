@@ -202,17 +202,24 @@ class Context(LoggingMixIn, Operations):
         return ['.', '..'] + [node.name for node in Node.getChildrenOfNode(Node.getNodeFromAbsPath(path))]
 
     def mkdir(self, path, mode):
-        print("do nothing")
+        if not Node.getNodeFromAbsPath(path):
+            if len(path.split('/')[:-1]) == 1:
+                print("Adding to root")
+                parent=Node(name=path.split('/')[1], directory=True)
+                session.add(parent)
+                session.commit()
+                return 0
 
     def create(self, path, mode):
         print("Create called")
 
         if not Node.getNodeFromAbsPath(path):
             if len(path.split('/')[:-1]) == 1:
-                 parent=Node(name=path.split('/')[1])
-                 session.add(parent)
-                 session.commit()
-                 return parent.id
+                print("Adding to root")
+                parent=Node(name=path.split('/')[1])
+                session.add(parent)
+                session.commit()
+                return parent.id
 
             pathRoot = path.split('/')[:-1]
             pathRoot = str.join(pathRoot)
