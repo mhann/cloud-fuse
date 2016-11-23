@@ -11,5 +11,8 @@ class Driver:
     def deleteDirectory(self, directoryName):
         return False
 
+    def listFiles(self, directoryName):
+        return False
+
     def init(self):
         return False

@@ -136,7 +136,7 @@ class Context(LoggingMixIn, Operations):
             if(node.directory):
                 attr = dict(st_mode=(S_IFDIR | 0o755), st_nlink=2, st_size=0)
             else:
-                attr = dict(st_mode=(S_IFREG | 0o755), st_nlink=2, st_size=helpers.blocks.getSizeOfFile(path))
+                attr = dict(st_mode=(S_IFREG | 0o755), st_nlink=2, st_size=helpers.blocks.getSizeOfFile(path, filesystem))
         elif path == '/':
             attr = dict(st_mode=(S_IFDIR | 0o755), st_nlink=2)
         else:
@@ -150,8 +150,8 @@ class Context(LoggingMixIn, Operations):
 
         print("Deleting all files in: {}".format(blockPath))
 
-        for f in os.listdir(blockPath):
-            os.remove(blockPath+f)
+        for f in fileSystem.listFiles(blockPath):
+            fileSystem.deleteFile(blockPath+f)
 
     def read(self, path, size, offset, fh):
 
@@ -162,8 +162,8 @@ class Context(LoggingMixIn, Operations):
         firstBlock=int(math.ceil(offset/512))
         numberOfBlocks=int(math.ceil((offsetFromFirstBlock+size)/512))
 
-        if numberOfBlocks > helpers.blocks.listBlocks(path) :
-            numberOfBlocks = helpers.blocks.listBlocks(path)
+        if numberOfBlocks > helpers.blocks.listBlocks(path, filesystem):
+            numberOfBlocks = helpers.blocks.listBlocks(path, filesystem)
 
         print("Number of blocks: {}".format(numberOfBlocks))
 
@@ -227,8 +227,7 @@ class Context(LoggingMixIn, Operations):
 
             blockPath = helpers.blocks.getBlockRoot(path)
 
-            if not os.path.exists(blockPath):
-                os.makedirs(blockPath)
+            filesystem.makeDirectory(blockPath)
 
             return newFile.id
 
@@ -263,9 +262,7 @@ class Context(LoggingMixIn, Operations):
 
             print("Block path is: {}".format(blockPath))
 
-            if not os.path.exists(blockPath):
-                print("Block path does not exist. Creating")
-                os.makedirs(blockPath)
+            filesystem.makeDirectory(blockPath)
 
             return newFile.id
 
@@ -350,6 +347,7 @@ if __name__ == '__main__':
     print("Testing drivers")
     driverImport = importlib.import_module("drivers.filesystem", __name__)
 
+    global filesystem
     filesystem = driverImport.drivers.filesystem.FileSystem()
 
     fuse = FUSE(Context(), argv[1], ro=False, foreground=True, nothreads=True)
