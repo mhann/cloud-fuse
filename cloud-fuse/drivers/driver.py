@@ -1,17 +1,17 @@
 class Driver:
-    def writeFile(self, fileName, fileContents):
+    def write_file(self, fileName, fileContents):
         return False
 
-    def deleteFile(self, fileName):
+    def delete_file(self, fileName):
         return False
 
-    def makeDirectory(self, directoryName):
+    def make_directory(self, directoryName):
         return False
 
-    def deleteDirectory(self, directoryName):
+    def delete_directory(self, directoryName):
         return False
 
-    def listFiles(self, directoryName):
+    def list_files(self, directoryName):
         return False
 
     def init(self):

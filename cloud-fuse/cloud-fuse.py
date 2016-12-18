@@ -80,6 +80,12 @@ class Node(Base):
 
         return lastParentNode
 
+class Block(Base):
+    __tablename__ = 'block'
+    id            = Column(Integer, primary_key=True)
+    hash          = Column(String)
+    size          = Column(Integer)
+    Node          = relationship("Node", remote_side=[id])
 
 # Holds information about specific files. Soon to be replaced with a more inode-like system.
 class File(Base):
@@ -136,7 +142,7 @@ class Context(LoggingMixIn, Operations):
             if(node.directory):
                 attr = dict(st_mode=(S_IFDIR | 0o755), st_nlink=2, st_size=0)
             else:
-                attr = dict(st_mode=(S_IFREG | 0o755), st_nlink=2, st_size=helpers.blocks.getSizeOfFile(path, filesystem))
+                attr = dict(st_mode=(S_IFREG | 0o755), st_nlink=2, st_size=helpers.blocks.get_size_of_file(path, filesystem))
         elif path == '/':
             attr = dict(st_mode=(S_IFDIR | 0o755), st_nlink=2)
         else:
@@ -146,12 +152,12 @@ class Context(LoggingMixIn, Operations):
         return attr
 
     def truncate(self, path, length, fh=None):
-        blockPath = helpers.blocks.getBlockRoot(path)
+        blockPath = helpers.blocks.get_block_root(path)
 
         print("Deleting all files in: {}".format(blockPath))
 
-        for f in fileSystem.listFiles(blockPath):
-            fileSystem.deleteFile(blockPath+f)
+        for f in fileSystem.list_files(blockPath):
+            fileSystem.delete_file(blockPath + f)
 
     def read(self, path, size, offset, fh):
 
@@ -162,8 +168,8 @@ class Context(LoggingMixIn, Operations):
         firstBlock=int(math.ceil(offset/512))
         numberOfBlocks=int(math.ceil((offsetFromFirstBlock+size)/512))
 
-        if numberOfBlocks > helpers.blocks.listBlocks(path, filesystem):
-            numberOfBlocks = helpers.blocks.listBlocks(path, filesystem)
+        if numberOfBlocks > helpers.blocks.list_blocks(path, filesystem):
+            numberOfBlocks = helpers.blocks.list_blocks(path, filesystem)
 
         print("Number of blocks: {}".format(numberOfBlocks))
 
@@ -185,11 +191,11 @@ class Context(LoggingMixIn, Operations):
 
             print("Would read {} bytes from block #{} at offset {}".format(bytesToRead, i, offsetForBlock))
 
-            blockPath = helpers.blocks.getBlockRoot(path)
+            blockPath = helpers.blocks.get_block_root(path)
 
-            print("Reading {} bytes from {} at offset {}".format(bytesToRead, helpers.blocks.getBlockRoot(path)+str(i), offsetForBlock))
+            print("Reading {} bytes from {} at offset {}".format(bytesToRead, helpers.blocks.get_block_root(path) + str(i), offsetForBlock))
 
-            f = open(helpers.blocks.getBlockRoot(path)+str(i), 'r')
+            f = open(helpers.blocks.get_block_root(path) + str(i), 'r')
             f.seek(offsetForBlock)
             blockContentsFromOffset = f.read(bytesToRead)
 
@@ -225,9 +231,9 @@ class Context(LoggingMixIn, Operations):
             parentNode.children.append(newFile)
             session.commit()
 
-            blockPath = helpers.blocks.getBlockRoot(path)
+            blockPath = helpers.blocks.get_block_root(path)
 
-            filesystem.makeDirectory(blockPath)
+            filesystem.make_directory(blockPath)
 
             return newFile.id
 
@@ -258,11 +264,11 @@ class Context(LoggingMixIn, Operations):
                 session.commit()
 
 
-            blockPath = helpers.blocks.getBlockRoot(path)
+            blockPath = helpers.blocks.get_block_root(path)
 
             print("Block path is: {}".format(blockPath))
 
-            filesystem.makeDirectory(blockPath)
+            filesystem.make_directory(blockPath)
 
             return newFile.id
 
@@ -274,7 +280,7 @@ class Context(LoggingMixIn, Operations):
 
     def write(self, path, data, offset, fh):
 
-        blockPath = helpers.blocks.getBlockRoot(path)
+        blockPath = helpers.blocks.get_block_root(path)
 
         blockSize = 512
         firstBlock = int(math.ceil(offset/blockSize))
@@ -286,11 +292,11 @@ class Context(LoggingMixIn, Operations):
 
         currentBlock = firstBlock
 
-        test = helpers.blocks.stringToChunks(data, blockSize)
+        test = helpers.blocks.string_to_chunks(data, blockSize)
 
         print(list(test))
 
-        for i, dataBlock in enumerate(helpers.blocks.stringToChunks(data, blockSize)):
+        for i, dataBlock in enumerate(helpers.blocks.string_to_chunks(data, blockSize)):
             if(i == 0):
                 # This is the first block that we are writing to
                 bytesToRead=blockSize-firstBlockOffset

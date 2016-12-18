@@ -2,11 +2,11 @@ import drivers.driver
 import os
 
 class FileSystem(drivers.driver.Driver):
-    def deleteDirectory(self, directoryName):
+    def delete_directory(self, directoryName):
         os.rmdir("data" + directoryName)
         return True
 
-    def writeFile(self, fileName, fileContents):
+    def write_file(self, fileName, fileContents):
         file = open("data" + fileName, 'r+')
         file.write(fileContents)
         return True
@@ -15,13 +15,13 @@ class FileSystem(drivers.driver.Driver):
         file = open("data" + fileName, 'r')
         return file.read()
 
-    def makeDirectory(self, directoryName):
+    def make_directory(self, directoryName):
         print("Making directories")
         if not os.path.exists("data" + directoryName):
             os.makedirs("data" + directoryName)
         return True
 
-    def listFiles(self, directoryName):
+    def list_files(self, directoryName):
         return os.listdir("data" + directoryName)
 
     def getSize(self, fileName):

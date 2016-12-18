@@ -1,28 +1,32 @@
 import md5
 import os
 
-def stringToChunks(string, chunkSize):
+
+#
+# Take a string, and split into chunks the size of chunkSize.
+# The final string will be string%chunkSize .
+def string_to_chunks(string, chunkSize):
     while string:
         yield string[:chunkSize]
         string = string[chunkSize:]
 
-def getBlockRoot(path):
+def get_block_root(path):
     md5Instance = md5.new()
     md5Instance.update(path)
 
     return '/files/{}/blocks/'.format(md5Instance.hexdigest())
 
-def listBlocks(path, driver):
-    blockRoot = getBlockRoot(path)
+def list_blocks(path, driver):
+    blockRoot = get_block_root(path)
 
     blocks = os.listdir(blockRoot)
     return len(blocks)
 
-def getSizeOfFile(path, driver):
+def get_size_of_file(path, driver):
     totalSize = 0
-    blockRoot = getBlockRoot(path)
+    blockRoot = get_block_root(path)
 
-    for block in driver.listFiles(blockRoot):
+    for block in driver.list_files(blockRoot):
         totalSize += driver.getSize(blockRoot+block)
 
     return totalSize
