@@ -8,22 +8,20 @@ from __future__ import print_function, absolute_import, division
 
 import logging
 import math
-import sqlite3
 import os
-import md5
 import importlib
 
 import helpers.blocks
 import helpers.filesystem
 import helpers.database
 
-from errno      import ENOENT
-from stat       import S_IFDIR, S_IFREG
-from sys        import argv, exit
-from time       import time
+from errno import ENOENT
+from stat import S_IFDIR, S_IFREG
+from sys import argv, exit
+from time import time
 
-from sqlalchemy                 import Column, String, Integer, ForeignKey, create_engine, Boolean, Date
-from sqlalchemy.orm             import relationship, backref, sessionmaker
+from sqlalchemy import Column, String, Integer, ForeignKey, create_engine, Boolean, Date
+from sqlalchemy.orm import relationship, sessionmaker
 from sqlalchemy.ext.declarative import declarative_base
 
 from fuse import FUSE, FuseOSError, Operations, LoggingMixIn, fuse_get_context
@@ -31,103 +29,65 @@ from fuse import FUSE, FuseOSError, Operations, LoggingMixIn, fuse_get_context
 # Base from sqlalchemy orm so that we can derive classes from it.
 Base = declarative_base()
 
+
 class Node(Base):
     __tablename__ = 'node'
-    id            = Column(Integer, primary_key=True)
-    parent_id     = Column(Integer, ForeignKey('node.id'))
-    children      = relationship("Node")
-    name          = Column(String)
-    size          = Column(Integer)
-    permissions   = Column(Integer)
-    directory     = Column(Boolean)
-    create_time   = Column(Date)
-    update_time   = Column(Date)
-    read_time     = Column(Date)
-    parent        = relationship("Node", remote_side=[id])
+    id = Column(Integer, primary_key=True)
+    parent_id = Column(Integer, ForeignKey('node.id'))
+    children = relationship("Node")
+    name = Column(String)
+    size = Column(Integer)
+    permissions = Column(Integer)
+    directory = Column(Boolean)
+    create_time = Column(Date)
+    update_time = Column(Date)
+    read_time = Column(Date)
+    parent = relationship("Node", remote_side=[id])
 
     @staticmethod
-    def getTopLevelNodes():
-        return session.query(Node).order_by(Node.id).filter(Node.parent == None)
+    def get_top_level_nodes():
+        return session.query(Node).order_by(Node.id).filter(Node.parent is None)
 
     @staticmethod
-    def getChildrenOfNode(parent):
-        childNodes = []
+    def get_children_of_node(parent):
+        child_nodes = []
 
         for row in session.query(Node).order_by(Node.id).filter(Node.parent == parent).all():
-            print(row.name);
-            childNodes.append(row)
+            print(row.name)
+            child_nodes.append(row)
 
-        return childNodes
+        return child_nodes
 
     @staticmethod
-    def getNodeFromAbsPath(path):
-        splitPath = path.split("/")
+    def get_node_from_abs_path(path):
+        split_path = path.split("/")
 
-        lastParentNode = None
+        last_parent_node = None
 
-        for pathSection in splitPath:
-            print("Working on path segment: {}".format(pathSection))
-            if pathSection == "":
+        for path_section in split_path:
+            print("Working on path segment: {}".format(path_section))
+            if path_section == "":
                 continue
 
             try:
-                print("Looking for node with parentid {} and name {}".format(lastParentNode, pathSection))
-                lastParentNode = session.query(Node).order_by(Node.id).filter(Node.parent == lastParentNode, Node.name == pathSection).one()
-                print("Found match for: {}, which was: {}".format(pathSection, Node.id))
+                print("Looking for node with parentid {} and name {}".format(last_parent_node, path_section))
+                last_parent_node = session.query(Node).order_by(Node.id).filter(Node.parent == last_parent_node,
+                                                                                Node.name == path_section).one()
+                print("Found match for: {}, which was: {}".format(path_section, Node.id))
             except:
                 # No file existed in this path
                 return False
 
-        return lastParentNode
+        return last_parent_node
+
 
 class Block(Base):
     __tablename__ = 'block'
-    id            = Column(Integer, primary_key=True)
-    hash          = Column(String)
-    size          = Column(Integer)
-    Node          = relationship("Node", remote_side=[id])
+    id = Column(Integer, primary_key=True)
+    hash = Column(String)
+    size = Column(Integer)
+    node = relationship("Node", remote_side=[id])
 
-# Holds information about specific files. Soon to be replaced with a more inode-like system.
-class File(Base):
-    __tablename__ = 'file'
-    id            = Column(Integer, primary_key=True)
-    path          = Column(String)
-    name          = Column(String)
-    permissions   = Column(Integer)
-    size          = Column(Integer)
-
-    @staticmethod
-    def get(path):
-        return session.query(File).order_by(File.id).filter(File.path == helpers.filesystem.preparePath(path)).one()
-
-    @staticmethod
-    def listOfFileNames():
-        knownFiles = []
-
-        for file in session.query(File).order_by(File.id):
-            knownFiles.append(file.name)
-
-        return knownFiles
-
-    @staticmethod
-    def exists(path):
-        print("Checking if {} exists".format(helpers.filesystem.preparePath(path)))
-        fileCountQuery = session.query(File).filter_by(path=helpers.filesystem.preparePath(path))
-        fileCount = fileCountQuery.count()
-
-        print("Database query returned {}".format(fileCount))
-
-        if fileCount == 0:
-            print("File Does Not Exist")
-            return False
-        elif fileCount == 1:
-            print("File Exists")
-            return True
-        else:
-            print("Something unexpected happened - we should not have more than one file")
-
-            # Return true to stop another duplicate file being added
-            return True
 
 # Main class passed to fuse - this is where we define the functions that are called by fuse.
 class Context(LoggingMixIn, Operations):
@@ -135,14 +95,13 @@ class Context(LoggingMixIn, Operations):
         return 0
 
     def getattr(self, path, fh=None):
-        uid, gid, pid = fuse_get_context()
-
-        node = Node.getNodeFromAbsPath(path)
-        if node:
-            if(node.directory):
+        node_for_path = Node.get_node_from_abs_path(path)
+        if node_for_path:
+            if (node_for_path.directory):
                 attr = dict(st_mode=(S_IFDIR | 0o755), st_nlink=2, st_size=0)
             else:
-                attr = dict(st_mode=(S_IFREG | 0o755), st_nlink=2, st_size=helpers.blocks.get_size_of_file(path, filesystem))
+                attr = dict(st_mode=(S_IFREG | 0o755), st_nlink=2,
+                            st_size=helpers.blocks.get_size_of_file(path, filesystem))
         elif path == '/':
             attr = dict(st_mode=(S_IFDIR | 0o755), st_nlink=2)
         else:
@@ -152,174 +111,177 @@ class Context(LoggingMixIn, Operations):
         return attr
 
     def truncate(self, path, length, fh=None):
-        blockPath = helpers.blocks.get_block_root(path)
+        block_path = helpers.blocks.get_block_root(path)
 
-        print("Deleting all files in: {}".format(blockPath))
+        print("Deleting all files in: {}".format(block_path))
 
-        for f in fileSystem.list_files(blockPath):
-            fileSystem.delete_file(blockPath + f)
+        for file_name in filesystem.list_files(block_path):
+            filesystem.delete_file(block_path + file_name)
 
     def read(self, path, size, offset, fh):
 
-        if not Node.getNodeFromAbsPath(path):
-            raise RuntimeError('unexpected path: %r' % path)
+        if not Node.get_node_from_abs_path(path):
+            raise RuntimeError('Could not find node for path: %r' % path)
 
-        offsetFromFirstBlock=offset%512
-        firstBlock=int(math.ceil(offset/512))
-        numberOfBlocks=int(math.ceil((offsetFromFirstBlock+size)/512))
+        offset_from_first_block = offset % 512
+        first_block = int(math.ceil(offset / 512))
+        number_of_blocks = int(math.ceil((offset_from_first_block + size) / 512))
 
-        if numberOfBlocks > helpers.blocks.list_blocks(path, filesystem):
-            numberOfBlocks = helpers.blocks.list_blocks(path, filesystem)
+        if number_of_blocks > helpers.blocks.list_blocks(path, filesystem):
+            number_of_blocks = helpers.blocks.list_blocks(path, filesystem)
 
-        print("Number of blocks: {}".format(numberOfBlocks))
+        print("Number of blocks: {}".format(number_of_blocks))
 
         if offset == 0:
-            firstBlock = 1
+            first_block = 1
 
-        fileContent = ""
+        file_content = ""
 
-        for i in range(firstBlock, firstBlock+numberOfBlocks):
-            if(i == firstBlock):
-                bytesToRead=512-offsetFromFirstBlock
-                offsetForBlock=offsetFromFirstBlock
-            elif(i == firstBlock+numberOfBlocks):
-                bytesToRead=512-(512-offsetFromFirstBlock)
-                offsetForBlock=0
+        for current_block_index in range(first_block, first_block + number_of_blocks):
+            if (current_block_index == first_block):
+                bytes_to_read = 512 - offset_from_first_block
+                offset_for_block = offset_from_first_block
+            elif (current_block_index == first_block + number_of_blocks):
+                bytes_to_read = 512 - (512 - offset_from_first_block)
+                offset_for_block = 0
             else:
-                bytesToRead=512
-                offsetForBlock=0
+                bytes_to_read = 512
+                offset_for_block = 0
 
-            print("Would read {} bytes from block #{} at offset {}".format(bytesToRead, i, offsetForBlock))
+            print("Would read {} bytes from block #{} at offset {}".format(bytes_to_read, current_block_index,
+                                                                           offset_for_block))
 
-            blockPath = helpers.blocks.get_block_root(path)
+            block_path = helpers.blocks.get_block_root(path)
 
-            print("Reading {} bytes from {} at offset {}".format(bytesToRead, helpers.blocks.get_block_root(path) + str(i), offsetForBlock))
+            print("Reading {} bytes from {} at offset {}".format(bytes_to_read, block_path + str(current_block_index),
+                                                                 offset_for_block))
 
-            f = open(helpers.blocks.get_block_root(path) + str(i), 'r')
-            f.seek(offsetForBlock)
-            blockContentsFromOffset = f.read(bytesToRead)
+            block_file = open(helpers.blocks.get_block_root(path) + str(current_block_index), 'r')
+            block_file.seek(offset_for_block)
+            block_contents_from_offset = block_file.read(bytes_to_read)
 
-            print("Would return: {}".format(blockContentsFromOffset))
+            print("Would return: {}".format(block_contents_from_offset))
 
-            fileContent += blockContentsFromOffset
+            file_content += block_contents_from_offset
 
-        return fileContent
+        return file_content
 
     def readdir(self, path, fh):
-        return ['.', '..'] + [node.name for node in Node.getChildrenOfNode(Node.getNodeFromAbsPath(path))]
+        return ['.', '..'] + [node_in_path.name for node_in_path in Node.get_children_of_node(Node.get_node_from_abs_path(path))]
 
     def mkdir(self, path, mode):
-        if not Node.getNodeFromAbsPath(path):
+        if not Node.get_node_from_abs_path(path):
             if len(path.split('/')[:-1]) == 1:
                 print("Adding to root")
-                parent=Node(name=path.split('/')[1], directory=True)
+                parent = Node(name=path.split('/')[1], directory=True)
                 session.add(parent)
                 session.commit()
                 return 0
 
-            pathRoot = path.split('/')[:-1]
-            pathRoot = '/'.join(pathRoot)
+            path_root = path.split('/')[:-1]
+            path_root = '/'.join(path_root)
 
-            parentNode = Node.getNodeFromAbsPath(pathRoot)
+            parent_node = Node.get_node_from_abs_path(path_root)
 
-            if not parentNode.directory:
+            if not parent_node.directory:
                 print("Trying to add node to non-directory node!")
                 # I doubt EEXIST is the correct thing to be returning here.
                 return os.EEXIST
 
-            newFile = Node(name=path.split('/')[1], directory=True)
-            parentNode.children.append(newFile)
+            new_file = Node(name=path.split('/')[1], directory=True)
+            parent_node.children.append(new_file)
             session.commit()
 
-            blockPath = helpers.blocks.get_block_root(path)
+            block_path = helpers.blocks.get_block_root(path)
 
-            filesystem.make_directory(blockPath)
+            filesystem.make_directory(block_path)
 
-            return newFile.id
+            return new_file.id
 
         return os.EEXIST
 
     def create(self, path, mode):
         print("Create called")
 
-        if not Node.getNodeFromAbsPath(path):
+        if not Node.get_node_from_abs_path(path):
             if len(path.split('/')[:-1]) == 1:
                 print("Adding to root")
-                newFile=Node(name=path.split('/')[1])
-                session.add(newFile)
+                new_file = Node(name=path.split('/')[1])
+                session.add(new_file)
                 session.commit()
             else:
-                pathRoot = path.split('/')[:-1]
-                pathRoot = '/'.join(pathRoot)
+                path_root = path.split('/')[:-1]
+                path_root = '/'.join(path_root)
 
-                parentNode = Node.getNodeFromAbsPath(pathRoot)
+                parent_node = Node.get_node_from_abs_path(path_root)
 
-                if not parentNode.directory:
+                if not parent_node.directory:
                     print("Trying to add node to non-directory node!")
                     # I doubt EEXIST is the correct thing to be returning here.
                     return os.EEXIST
 
-                newFile = Node(name=path.split('/')[-1], directory=False)
-                parentNode.children.append(newFile)
+                new_file = Node(name=path.split('/')[-1], directory=False)
+                parent_node.children.append(new_file)
                 session.commit()
 
+            block_path = helpers.blocks.get_block_root(path)
 
-            blockPath = helpers.blocks.get_block_root(path)
+            print("Block path is: {}".format(block_path))
 
-            print("Block path is: {}".format(blockPath))
+            filesystem.make_directory(block_path)
 
-            filesystem.make_directory(blockPath)
-
-            return newFile.id
+            return new_file.id
 
         return os.EEXIST
 
     def open(self, path, flags):
         # NOT a real fd - but will do for simple testing
-        return Node.getNodeFromAbsPath(path).id
+        return Node.get_node_from_abs_path(path).id
 
     def write(self, path, data, offset, fh):
 
-        blockPath = helpers.blocks.get_block_root(path)
+        block_path = helpers.blocks.get_block_root(path)
 
-        blockSize = 512
-        firstBlock = int(math.ceil(offset/blockSize))
-        firstBlockOffset = int(offset%blockSize)
-        numberOfBlocks=int(math.ceil((firstBlockOffset+blockSize)/blockSize))
+        block_size = 512
+        first_block = int(math.ceil(offset / block_size))
+        first_block_offset = int(offset % block_size)
+        number_of_blocks = int(math.ceil((first_block_offset + block_size) / block_size))
 
         if offset == 0:
-            firstBlock = 1
+            first_block = 1
 
-        currentBlock = firstBlock
+        current_block = first_block
 
-        test = helpers.blocks.string_to_chunks(data, blockSize)
+        test = helpers.blocks.string_to_chunks(data, block_size)
 
         print(list(test))
 
-        for i, dataBlock in enumerate(helpers.blocks.string_to_chunks(data, blockSize)):
-            if(i == 0):
+        for i, dataBlock in enumerate(helpers.blocks.string_to_chunks(data, block_size)):
+            if (i == 0):
                 # This is the first block that we are writing to
-                bytesToRead=blockSize-firstBlockOffset
-                offsetForBlock=firstBlockOffset
-            elif(i == numberOfBlocks):
+                bytes_to_read = block_size - first_block_offset
+                offset_for_block = first_block_offset
+            elif (i == number_of_blocks):
                 # This is the last block that we are writing to
-                bytesToRead=blockSize-(blockSize-firstBlockOffset)
-                offsetForBlock=0
+                bytes_to_read = block_size - (block_size - first_block_offset)
+                offset_for_block = 0
             else:
-                bytesToRead=blockSize
-                offsetForBlock=0
+                bytes_to_read = block_size
+                offset_for_block = 0
 
-            currentBlock = firstBlock+i
+            current_block = first_block + i
 
-            print("Writing data {} of size {} to block {} at offset {}".format(dataBlock, len(dataBlock), currentBlock, offsetForBlock))
+            print("Writing data {} of size {} to block {} at offset {}".format(dataBlock, len(dataBlock), current_block,
+                                                                               offset_for_block))
 
-            f = os.open(blockPath+str(currentBlock), os.O_CREAT | os.O_WRONLY)
+            block_file = os.open(block_path + str(current_block), os.O_CREAT | os.O_WRONLY)
 
-            with os.fdopen(f, 'w') as file_obj:
-                file_obj.seek(firstBlockOffset)
+            with os.fdopen(block_file, 'w') as file_obj:
+                file_obj.seek(first_block_offset)
                 file_obj.write(dataBlock)
 
         return len(data)
+
 
 if __name__ == '__main__':
     if len(argv) != 2:
@@ -334,7 +296,7 @@ if __name__ == '__main__':
     Base.metadata.create_all(engine)
     session = sessionMaker()
 
-    parent1=Node(name='test', directory=True)
+    parent1 = Node(name='test', directory=True)
     parent1.children.append(Node(name='test2', directory=True))
 
     session.add(parent1)
@@ -344,11 +306,11 @@ if __name__ == '__main__':
     for node in session.query(Node):
         print("Node: {}".format(node.name))
 
-    Node.getNodeFromAbsPath('/test/test2').children.append(Node(name='test21'))
+    Node.get_node_from_abs_path('/test/test2').children.append(Node(name='test21'))
 
     session.commit()
 
-    print(Node.getNodeFromAbsPath('/test/test2/test21').name)
+    print(Node.get_node_from_abs_path('/test/test2/test21').name)
 
     print("Testing drivers")
     driverImport = importlib.import_module("drivers.filesystem", __name__)

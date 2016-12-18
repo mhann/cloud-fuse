@@ -11,22 +11,22 @@ def string_to_chunks(string, chunkSize):
         string = string[chunkSize:]
 
 def get_block_root(path):
-    md5Instance = md5.new()
-    md5Instance.update(path)
+    md5_instance = md5.new()
+    md5_instance.update(path)
 
-    return '/files/{}/blocks/'.format(md5Instance.hexdigest())
+    return '/files/{}/blocks/'.format(md5_instance.hexdigest())
 
 def list_blocks(path, driver):
-    blockRoot = get_block_root(path)
+    block_root = get_block_root(path)
 
-    blocks = os.listdir(blockRoot)
+    blocks = os.listdir(block_root)
     return len(blocks)
 
 def get_size_of_file(path, driver):
-    totalSize = 0
-    blockRoot = get_block_root(path)
+    total_size = 0
+    block_root = get_block_root(path)
 
-    for block in driver.list_files(blockRoot):
-        totalSize += driver.getSize(blockRoot+block)
+    for block in driver.list_files(block_root):
+        total_size += driver.getSize(block_root+block)
 
-    return totalSize
+    return total_size
