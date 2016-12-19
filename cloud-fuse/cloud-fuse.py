@@ -49,7 +49,7 @@ class Node(Base):
 
     @staticmethod
     def get_top_level_nodes():
-        return session.query(Node).order_by(Node.id).filter(Node.parent is None)
+        return session.query(Node).order_by(Node.id).filter(Node.parent is None).all()
 
     @staticmethod
     def get_children_of_node(parent):
@@ -109,16 +109,20 @@ class Context(LoggingMixIn, Operations):
     def removexattr(self, att1, att2):
         return 0
 
+    def rename(self, old, new):
+        # Do something here
+        return os.EEXIST
+
     def getattr(self, path, fh=None):
         node_for_path = Node.get_node_from_abs_path(path)
         if node_for_path:
             if (node_for_path.directory):
-                attr = dict(st_mode=(S_IFDIR | 0o755), st_nlink=2, st_size=0)
+                attr = dict(st_mode=(S_IFDIR | 0o755), st_nlink=2 + len(node_for_path.children), st_size=0)
             else:
-                attr = dict(st_mode=(S_IFREG | 0o755), st_nlink=2,
+                attr = dict(st_mode=(S_IFREG | 0o755), st_nlink=1,
                             st_size=node_for_path.get_size())
         elif path == '/':
-            attr = dict(st_mode=(S_IFDIR | 0o755), st_nlink=2)
+            attr = dict(st_mode=(S_IFDIR | 0o755), st_nlink=2 + len(Node.get_top_level_nodes()))
         else:
             raise FuseOSError(ENOENT)
 
@@ -130,20 +134,22 @@ class Context(LoggingMixIn, Operations):
 
         print("Deleting all files in: {}".format(block_path))
 
-        for file_name in filesystem.list_files(block_path):
-            filesystem.delete_file(block_path + file_name)
+        for block in Node.get_node_from_abs_path(path).blocks:
+            filesystem.delete_file(block_path + block.position)
 
     def read(self, path, size, offset, fh):
 
-        if not Node.get_node_from_abs_path(path):
+        node_to_read = Node.get_node_from_abs_path(path)
+
+        if not node_to_read:
             raise RuntimeError('Could not find node for path: %r' % path)
 
         offset_from_first_block = offset % 512
         first_block = int(math.ceil(offset / 512))
         number_of_blocks = int(math.ceil((offset_from_first_block + size) / 512))
 
-        if number_of_blocks > helpers.blocks.list_blocks(path, filesystem):
-            number_of_blocks = helpers.blocks.list_blocks(path, filesystem)
+        if number_of_blocks > len(node_to_read.blocks):
+            number_of_blocks = len(node_to_read.blocks)
 
         print("Number of blocks: {}".format(number_of_blocks))
 
@@ -170,10 +176,9 @@ class Context(LoggingMixIn, Operations):
 
             print("Reading {} bytes from {} at offset {}".format(bytes_to_read, block_path + str(current_block_index),
                                                                  offset_for_block))
-
-            block_file = open(helpers.blocks.get_block_root(path) + str(current_block_index), 'r')
-            block_file.seek(offset_for_block)
-            block_contents_from_offset = block_file.read(bytes_to_read)
+            print("Reading whole block")
+            whole_block_contents = filesystem.readFile(helpers.blocks.get_block_root(path) + str(current_block_index))
+            block_contents_from_offset = whole_block_contents[offset_for_block:(offset_for_block + bytes_to_read)]
 
             print("Would return: {}".format(block_contents_from_offset))
 
@@ -305,11 +310,12 @@ class Context(LoggingMixIn, Operations):
             print("Writing data {} of size {} to block {} at offset {}".format(data_block, len(data_block), current_block,
                                                                                offset_for_block))
 
-            block_file = os.open('./data/' + block_path + str(current_block), os.O_CREAT | os.O_WRONLY)
+            current_block_contents = filesystem.readFile(block_path + str(current_block))
+            if not current_block_contents:
+                current_block_contents = ""
 
-            with os.fdopen(block_file, 'w') as file_obj:
-                file_obj.seek(offset_for_block)
-                file_obj.write(data_block)
+            new_block_contents = current_block_contents[:offset_for_block] + data_block
+            filesystem.write_file(block_path + str(current_block), new_block_contents)
 
         return len(data)
 
