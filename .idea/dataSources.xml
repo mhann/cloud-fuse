@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="DataSourceManagerImpl" format="xml" multifile-model="true">
+    <data-source source="LOCAL" name="test.db" uuid="69a00fbc-5c65-4814-bb68-990e3e5cd809">
+      <driver-ref>sqlite.xerial</driver-ref>
+      <synchronize>true</synchronize>
+      <jdbc-driver>org.sqlite.JDBC</jdbc-driver>
+      <jdbc-url>jdbc:sqlite:$PROJECT_DIR$/cloud-fuse/test.db</jdbc-url>
+    </data-source>
+    <data-source source="LOCAL" name="test.db [2]" uuid="c22c8413-236e-446a-8143-b82320b6b79e">
+      <driver-ref>sqlite.xerial</driver-ref>
+      <synchronize>true</synchronize>
+      <jdbc-driver>org.sqlite.JDBC</jdbc-driver>
+      <jdbc-url>jdbc:sqlite:$PROJECT_DIR$/cloud-fuse/test.db</jdbc-url>
+    </data-source>
+    <data-source source="LOCAL" name="test.db [3]" uuid="a656b41f-cfac-4cf0-a643-1aee780370be">
+      <driver-ref>sqlite.xerial</driver-ref>
+      <synchronize>true</synchronize>
+      <jdbc-driver>org.sqlite.JDBC</jdbc-driver>
+      <jdbc-url>jdbc:sqlite:$PROJECT_DIR$/cloud-fuse/test.db</jdbc-url>
+    </data-source>
+    <data-source source="LOCAL" name="test.db [4]" uuid="577e9cbf-17a7-42e4-9d4f-251694e12a1b">
+      <driver-ref>sqlite.xerial</driver-ref>
+      <synchronize>true</synchronize>
+      <jdbc-driver>org.sqlite.JDBC</jdbc-driver>
+      <jdbc-url>jdbc:sqlite:$PROJECT_DIR$/cloud-fuse/test.db</jdbc-url>
+    </data-source>
+    <data-source source="LOCAL" name="test.db [5]" uuid="af09169b-7e4e-4c9c-b973-b24ed3e16df4">
+      <driver-ref>sqlite.xerial</driver-ref>
+      <synchronize>true</synchronize>
+      <jdbc-driver>org.sqlite.JDBC</jdbc-driver>
+      <jdbc-url>jdbc:sqlite:$PROJECT_DIR$/cloud-fuse/test.db</jdbc-url>
+    </data-source>
+  </component>
+</project>

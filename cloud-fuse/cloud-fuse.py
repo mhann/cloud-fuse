@@ -6,8 +6,10 @@
 
 from __future__ import print_function, absolute_import, division
 
+import hashlib
 import logging
 import math
+import md5
 import os
 import importlib
 
@@ -43,6 +45,7 @@ class Node(Base):
     update_time = Column(Date)
     read_time = Column(Date)
     parent = relationship("Node", remote_side=[id])
+    blocks = relationship("Block")
 
     @staticmethod
     def get_top_level_nodes():
@@ -80,13 +83,25 @@ class Node(Base):
 
         return last_parent_node
 
+    def get_size(self):
+        print("Getting size for node with name: {}".format(self.name))
+
+        total_size = 0
+
+        for file_block in self.blocks:
+            print("Found block with size: {}".format(file_block.size))
+            total_size += file_block.size
+
+        return total_size
+
 
 class Block(Base):
     __tablename__ = 'block'
     id = Column(Integer, primary_key=True)
     hash = Column(String)
     size = Column(Integer)
-    node = relationship("Node", remote_side=[id])
+    node = Column(Integer, ForeignKey('node.id'))
+    position = Column(Integer)
 
 
 # Main class passed to fuse - this is where we define the functions that are called by fuse.
@@ -101,7 +116,7 @@ class Context(LoggingMixIn, Operations):
                 attr = dict(st_mode=(S_IFDIR | 0o755), st_nlink=2, st_size=0)
             else:
                 attr = dict(st_mode=(S_IFREG | 0o755), st_nlink=2,
-                            st_size=helpers.blocks.get_size_of_file(path, filesystem))
+                            st_size=node_for_path.get_size())
         elif path == '/':
             attr = dict(st_mode=(S_IFDIR | 0o755), st_nlink=2)
         else:
@@ -205,6 +220,10 @@ class Context(LoggingMixIn, Operations):
 
         if not Node.get_node_from_abs_path(path):
             if len(path.split('/')[:-1]) == 1:
+                # This is a path without multiple slashes such as:
+                #    /home.txt
+                # This would NOT include:
+                #    /home/home.txt
                 print("Adding to root")
                 new_file = Node(name=path.split('/')[1])
                 session.add(new_file)
@@ -239,46 +258,58 @@ class Context(LoggingMixIn, Operations):
         return Node.get_node_from_abs_path(path).id
 
     def write(self, path, data, offset, fh):
-
+        to_write_node = Node.get_node_from_abs_path(path)
         block_path = helpers.blocks.get_block_root(path)
 
         block_size = 512
-        first_block = int(math.ceil(offset / block_size))
+        first_block_for_to_write_data = int(math.ceil(offset / block_size))
         first_block_offset = int(offset % block_size)
         number_of_blocks = int(math.ceil((first_block_offset + block_size) / block_size))
 
         if offset == 0:
-            first_block = 1
+            first_block_for_to_write_data = 1
 
-        current_block = first_block
+        current_block = first_block_for_to_write_data
 
         test = helpers.blocks.string_to_chunks(data, block_size)
 
         print(list(test))
 
-        for i, dataBlock in enumerate(helpers.blocks.string_to_chunks(data, block_size)):
-            if (i == 0):
+        for position, data_block in enumerate(helpers.blocks.string_to_chunks(data, block_size)):
+            if (position == 0):
                 # This is the first block that we are writing to
-                bytes_to_read = block_size - first_block_offset
+                bytes_to_write = block_size - first_block_offset
                 offset_for_block = first_block_offset
-            elif (i == number_of_blocks):
+            elif (position == number_of_blocks):
                 # This is the last block that we are writing to
-                bytes_to_read = block_size - (block_size - first_block_offset)
+                bytes_to_write = block_size - (block_size - first_block_offset)
                 offset_for_block = 0
             else:
-                bytes_to_read = block_size
+                bytes_to_write = block_size
                 offset_for_block = 0
 
-            current_block = first_block + i
+            data_hash = hashlib.md5()
+            data_hash.update(data_block)
 
-            print("Writing data {} of size {} to block {} at offset {}".format(dataBlock, len(dataBlock), current_block,
+            current_block = first_block_for_to_write_data + position
+
+            block_instance = Block()
+            block_instance.size = len(data_block)
+            block_instance.hash = data_hash.hexdigest()
+            block_instance.position = position
+
+            session.add(block_instance)
+            to_write_node.blocks.append(block_instance)
+            session.commit()
+
+            print("Writing data {} of size {} to block {} at offset {}".format(data_block, len(data_block), current_block,
                                                                                offset_for_block))
 
-            block_file = os.open(block_path + str(current_block), os.O_CREAT | os.O_WRONLY)
+            block_file = os.open('./data/' + block_path + str(current_block), os.O_CREAT | os.O_WRONLY)
 
             with os.fdopen(block_file, 'w') as file_obj:
-                file_obj.seek(first_block_offset)
-                file_obj.write(dataBlock)
+                file_obj.seek(offset_for_block)
+                file_obj.write(data_block)
 
         return len(data)
 
