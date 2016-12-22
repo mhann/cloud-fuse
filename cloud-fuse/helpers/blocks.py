@@ -5,8 +5,17 @@ import os
 #
 # Take a string, and split into chunks the size of chunkSize.
 # The final string will be string%chunkSize .
-def string_to_chunks(string, chunkSize):
+def string_to_chunks(string, chunkSize, first_block_size=False):
+    if not first_block_size:
+        first_block_size = chunkSize
+
+    first_block = True
     while string:
+        if first_block :
+            yield string[:first_block_size]
+            string = string[first_block_size:]
+            continue
+
         yield string[:chunkSize]
         string = string[chunkSize:]
 

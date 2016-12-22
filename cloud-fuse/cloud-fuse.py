@@ -30,6 +30,7 @@ from fuse import FUSE, FuseOSError, Operations, LoggingMixIn, fuse_get_context
 
 # Base from sqlalchemy orm so that we can derive classes from it.
 Base = declarative_base()
+BlockSize = 65534
 
 
 class Node(Base):
@@ -113,6 +114,16 @@ class Context(LoggingMixIn, Operations):
         # Do something here
         return os.EEXIST
 
+    def statfs(self, path):
+        return dict(
+            f_bsize=512 * 1024,
+            f_frsize=512 * 1024,
+            f_blocks=20000000000,
+            f_bfree=20000000000,
+            f_bavail=20000000000,
+            f_namemax=256
+        )
+
     def getattr(self, path, fh=None):
         node_for_path = Node.get_node_from_abs_path(path)
         if node_for_path:
@@ -138,15 +149,16 @@ class Context(LoggingMixIn, Operations):
             filesystem.delete_file(block_path + block.position)
 
     def read(self, path, size, offset, fh):
-
+        print("Processing read request for size: {}".format(size))
         node_to_read = Node.get_node_from_abs_path(path)
+        block_size = BlockSize
 
         if not node_to_read:
             raise RuntimeError('Could not find node for path: %r' % path)
 
-        offset_from_first_block = offset % 512
-        first_block = int(math.ceil(offset / 512))
-        number_of_blocks = int(math.ceil((offset_from_first_block + size) / 512))
+        offset_from_first_block = offset % block_size
+        first_block = int(math.ceil(offset / block_size))
+        number_of_blocks = int(math.ceil((offset_from_first_block + size) / block_size))
 
         if number_of_blocks > len(node_to_read.blocks):
             number_of_blocks = len(node_to_read.blocks)
@@ -158,15 +170,23 @@ class Context(LoggingMixIn, Operations):
 
         file_content = ""
 
-        for current_block_index in range(first_block, first_block + number_of_blocks):
+        for current_block_index in range(first_block, first_block + number_of_blocks - 1):
             if (current_block_index == first_block):
-                bytes_to_read = 512 - offset_from_first_block
+                print("Reading from first block")
+                bytes_to_read = block_size - offset_from_first_block
+
+                if size < bytes_to_read:
+                    bytes_to_read = size
+
                 offset_for_block = offset_from_first_block
-            elif (current_block_index == first_block + number_of_blocks):
-                bytes_to_read = 512 - (512 - offset_from_first_block)
+            elif (current_block_index == first_block + (number_of_blocks - 1)):
+                print("Reading from last block")
+                # Number of bytes read so far
+                bytes_read_so_far = (block_size - offset_from_first_block) + (block_size * (first_block + number_of_blocks - 1) - 2)
+                bytes_to_read = size - bytes_read_so_far
                 offset_for_block = 0
             else:
-                bytes_to_read = 512
+                bytes_to_read = block_size
                 offset_for_block = 0
 
             print("Would read {} bytes from block #{} at offset {}".format(bytes_to_read, current_block_index,
@@ -180,9 +200,10 @@ class Context(LoggingMixIn, Operations):
             whole_block_contents = filesystem.readFile(helpers.blocks.get_block_root(path) + str(current_block_index))
             block_contents_from_offset = whole_block_contents[offset_for_block:(offset_for_block + bytes_to_read)]
 
-            print("Would return: {}".format(block_contents_from_offset))
+            print("Would return content with size of: {}".format(len(block_contents_from_offset)))
 
             file_content += block_contents_from_offset
+            print("Total length after this block: {}".format(len(file_content)))
 
         return file_content
 
@@ -266,7 +287,7 @@ class Context(LoggingMixIn, Operations):
         to_write_node = Node.get_node_from_abs_path(path)
         block_path = helpers.blocks.get_block_root(path)
 
-        block_size = 512
+        block_size = BlockSize
         first_block_for_to_write_data = int(math.ceil(offset / block_size))
         first_block_offset = int(offset % block_size)
         number_of_blocks = int(math.ceil((first_block_offset + block_size) / block_size))
@@ -280,7 +301,7 @@ class Context(LoggingMixIn, Operations):
 
         print(list(test))
 
-        for position, data_block in enumerate(helpers.blocks.string_to_chunks(data, block_size)):
+        for position, data_block in enumerate(helpers.blocks.string_to_chunks(data, block_size, block_size - first_block_offset)):
             if (position == 0):
                 # This is the first block that we are writing to
                 bytes_to_write = block_size - first_block_offset
@@ -307,7 +328,7 @@ class Context(LoggingMixIn, Operations):
             to_write_node.blocks.append(block_instance)
             session.commit()
 
-            print("Writing data {} of size {} to block {} at offset {}".format(data_block, len(data_block), current_block,
+            print("Writing data of size {} to block {} at offset {}".format(len(data_block), current_block,
                                                                                offset_for_block))
 
             current_block_contents = filesystem.readFile(block_path + str(current_block))
@@ -315,7 +336,19 @@ class Context(LoggingMixIn, Operations):
                 current_block_contents = ""
 
             new_block_contents = current_block_contents[:offset_for_block] + data_block
-            filesystem.write_file(block_path + str(current_block), new_block_contents)
+
+            write_success = False
+            number_of_retries_left = 3
+
+            while not write_success and number_of_retries_left > 0:
+                if not filesystem.write_file(block_path + str(current_block), new_block_contents):
+                    number_of_retries_left -= 1
+                    write_success = False
+                    continue
+                write_success = True
+
+            # As yet undecided what to do in the case that all uploads failed
+            # Best guess would be to return an I/O error - that seems to match the actual error fairly well.
 
         return len(data)
 
@@ -327,32 +360,21 @@ if __name__ == '__main__':
 
     logging.basicConfig(level=logging.DEBUG)
 
-    engine = create_engine('sqlite:///')
+    engine = create_engine('sqlite:///nodes.db')
     sessionMaker = sessionmaker()
     sessionMaker.configure(bind=engine)
     Base.metadata.create_all(engine)
     session = sessionMaker()
 
-    parent1 = Node(name='test', directory=True)
-    parent1.children.append(Node(name='test2', directory=True))
-
-    session.add(parent1)
-    session.commit()
-
     print("Listing all nodes")
     for node in session.query(Node):
         print("Node: {}".format(node.name))
 
-    Node.get_node_from_abs_path('/test/test2').children.append(Node(name='test21'))
-
-    session.commit()
-
-    print(Node.get_node_from_abs_path('/test/test2/test21').name)
-
     print("Testing drivers")
-    driverImport = importlib.import_module("drivers.filesystem", __name__)
+    driverImport = importlib.import_module("drivers.dropbox_driver", __name__)
 
     global filesystem
-    filesystem = driverImport.drivers.filesystem.FileSystem()
+    filesystem = driverImport.drivers.dropbox_driver.DropboxDriver()
+    filesystem.init()
 
-    fuse = FUSE(Context(), argv[1], ro=False, foreground=True, nothreads=True)
+    fuse = FUSE(Context(), argv[1], ro=False, foreground=True, nothreads=True, daemon_timeout=10000)

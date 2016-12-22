@@ -1,2 +1,4 @@
 fusepy
 sqlalchemy
+google-api-python-client
+dropbox
